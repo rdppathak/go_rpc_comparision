@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package fileops;
+
+service FileOpsService {
+    rpc Open(OpenRequest) returns (OpenResponse) {}
+    rpc Close(CloseRequest) returns (CloseResponse) {}
+    rpc StreamReadAt(ReadAtRequest) returns (stream Chunk) {}
+    rpc Size(SizeRequest) returns (SizeResponse) {}
+    rpc ReaderAt(ReaderAtRequest) returns (ReaderAtResponse) {}
+}
+
+message OpenRequest {
+    string Path = 1;
+}
+
+message OpenResponse {
+	int64 Id = 1;
+}
+
+message CloseRequest {}
+
+message CloseResponse {}
+
+message ReadAtRequest {
+	string Path = 1;
+	int64 Offset = 2;
+	int64 BlockSize = 3;
+	int64 ReadSize = 4;
+}
+
+message Chunk {
+	int64 Offset = 1;
+	bytes Data = 2;
+}
+
+message SizeRequest {
+	string Path = 1;
+}
+
+message SizeResponse {
+	int64 Size = 1;
+}
+
+message ReaderAtRequest {
+	int64 Offset = 1;
+	int64 ReadSize = 2;
+	string Path = 3;
+}
+
+message ReaderAtResponse {
+	bytes Data = 1;
+}
