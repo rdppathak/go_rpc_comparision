@@ -56,6 +56,9 @@ func (s *server) Open(context context.Context, in *fileoperations.OpenRequest) (
 
 func (s *server) Close(context context.Context, in *fileoperations.CloseRequest) (*flatbuffers.Builder, error) {
 	log.Println("Close called...")
+	handle, _ := s.handleMap[string(in.Path())]
+	handle.Close()
+	delete(s.handleMap, string(in.Path()))
 	b := flatbuffers.NewBuilder(0)
 	fileoperations.CloseResponseStart(b)
 	b.Finish(fileoperations.CloseResponseEnd(b))
@@ -79,15 +82,15 @@ func (s *server) Size(context context.Context, in *fileoperations.SizeRequest) (
 	return b, nil
 }
 
-func (s *server) StreamReadAt(in *fileoperations.ReadAtRequest, ser fileoperations.FileOpsService_StreamReadAtServer) (error) {
-	log.Println("ReadAt called %v %v %v", int64(in.Offset()), int64(in.Size()), int64(in.BlockSize()))
+func (s *server) StreamReadAt(in *fileoperations.StreamReadAtRequest, ser fileoperations.FileOpsService_StreamReadAtServer) (error) {
+	log.Println("StreamReadAt called %v %v %v", int64(in.Offset()), int64(in.Size()), int64(in.BlockSize()))
 
 	handle, _ := s.handleMap[string(in.Path())]
 	var currentOffset int64 = int64(in.Offset())
 	var doneSize int64 = 0
 	var data []byte
 	for doneSize < int64(in.Size()) {
-		log.Printf ("Reading data at offset: %v", currentOffset)
+		// log.Printf ("Reading data at offset: %v", currentOffset)
 		data = make([]byte, int64(in.BlockSize()))
 		if doneSize + int64(in.BlockSize()) > int64(in.Size()) {
 			data = make([]byte, int64(in.Size())-doneSize)
@@ -96,9 +99,11 @@ func (s *server) StreamReadAt(in *fileoperations.ReadAtRequest, ser fileoperatio
 		_, _ = handle.ReadAt(data, currentOffset)
 
 		b := flatbuffers.NewBuilder(0)
-		fileoperations.ReadAtResponseStart(b)
-		fileoperations.ReadAtResponseAddOffset(b, currentOffset)
-		b.Finish(fileoperations.ReadAtResponseEnd(b))
+		strPath := b.CreateString(string(data[:]))
+		fileoperations.StreamReadAtResponseStart(b)
+		fileoperations.StreamReadAtResponseAddOffset(b, currentOffset)
+		fileoperations.StreamReadAtResponseAddData(b, strPath)
+		b.Finish(fileoperations.StreamReadAtResponseEnd(b))
 
 		if err := ser.Send(b); err != nil {
 			return err
@@ -110,7 +115,30 @@ func (s *server) StreamReadAt(in *fileoperations.ReadAtRequest, ser fileoperatio
 }
 
 
+func (s *server) ReadAt(ctx context.Context, in *fileoperations.ReadAtRequest) (*flatbuffers.Builder, error) {
+	// log.Printf ("ReadAt Called ")
+	path := string(in.Path())
+	offset := int64(in.Offset())
+	size := int64(in.Size())
+	handle, _ := s.handleMap[path]
 
+	data := make([]byte, size)
+	_, err := handle.ReadAt(data, offset)
+
+	if err != nil {
+		return nil, err
+	}
+
+	b := flatbuffers.NewBuilder(0)
+	strPath := b.CreateString(string(data[:]))
+	fileoperations.StreamReadAtResponseStart(b)
+	fileoperations.StreamReadAtResponseAddOffset(b, offset)
+	fileoperations.StreamReadAtResponseAddData(b, strPath)
+	b.Finish(fileoperations.StreamReadAtResponseEnd(b))
+
+	return b, nil
+
+}
 
 
 func main() {

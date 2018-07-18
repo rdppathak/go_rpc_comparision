@@ -19,6 +19,8 @@ type FileOpsServiceClient interface{
   	opts... grpc.CallOption) (* CloseResponse, error)  
   StreamReadAt(ctx context.Context, in *flatbuffers.Builder, 
   	opts... grpc.CallOption) (FileOpsService_StreamReadAtClient, error)  
+  ReadAt(ctx context.Context, in *flatbuffers.Builder, 
+  	opts... grpc.CallOption) (* StreamReadAtResponse, error)  
   Size(ctx context.Context, in *flatbuffers.Builder, 
   	opts... grpc.CallOption) (* SizeResponse, error)  
 }
@@ -58,7 +60,7 @@ func (c *fileOpsServiceClient) StreamReadAt(ctx context.Context, in *flatbuffers
 }
 
 type FileOpsService_StreamReadAtClient interface {
-  Recv() (*ReadAtResponse, error)
+  Recv() (*StreamReadAtResponse, error)
   grpc.ClientStream
 }
 
@@ -66,10 +68,18 @@ type fileOpsServiceStreamReadAtClient struct{
   grpc.ClientStream
 }
 
-func (x *fileOpsServiceStreamReadAtClient) Recv() (*ReadAtResponse, error) {
-  m := new(ReadAtResponse)
+func (x *fileOpsServiceStreamReadAtClient) Recv() (*StreamReadAtResponse, error) {
+  m := new(StreamReadAtResponse)
   if err := x.ClientStream.RecvMsg(m); err != nil { return nil, err }
   return m, nil
+}
+
+func (c *fileOpsServiceClient) ReadAt(ctx context.Context, in *flatbuffers.Builder, 
+	opts... grpc.CallOption) (* StreamReadAtResponse, error) {
+  out := new(StreamReadAtResponse)
+  err := grpc.Invoke(ctx, "/fileoperations.FileOpsService/ReadAt", in, out, c.cc, opts...)
+  if err != nil { return nil, err }
+  return out, nil
 }
 
 func (c *fileOpsServiceClient) Size(ctx context.Context, in *flatbuffers.Builder, 
@@ -84,7 +94,8 @@ func (c *fileOpsServiceClient) Size(ctx context.Context, in *flatbuffers.Builder
 type FileOpsServiceServer interface {
   Open(context.Context, *OpenRequest) (*flatbuffers.Builder, error)  
   Close(context.Context, *CloseRequest) (*flatbuffers.Builder, error)  
-  StreamReadAt(*ReadAtRequest, FileOpsService_StreamReadAtServer) error  
+  StreamReadAt(*StreamReadAtRequest, FileOpsService_StreamReadAtServer) error  
+  ReadAt(context.Context, *ReadAtRequest) (*flatbuffers.Builder, error)  
   Size(context.Context, *SizeRequest) (*flatbuffers.Builder, error)  
 }
 
@@ -127,7 +138,7 @@ func _FileOpsService_Close_Handler(srv interface{}, ctx context.Context,
 
 
 func _FileOpsService_StreamReadAt_Handler(srv interface{}, stream grpc.ServerStream) error {
-  m := new(ReadAtRequest)
+  m := new(StreamReadAtRequest)
   if err := stream.RecvMsg(m); err != nil { return err }
   return srv.(FileOpsServiceServer).StreamReadAt(m, &fileOpsServiceStreamReadAtServer{stream})
 }
@@ -143,6 +154,23 @@ type fileOpsServiceStreamReadAtServer struct {
 
 func (x *fileOpsServiceStreamReadAtServer) Send(m *flatbuffers.Builder) error {
   return x.ServerStream.SendMsg(m)
+}
+
+
+func _FileOpsService_ReadAt_Handler(srv interface{}, ctx context.Context,
+	dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+  in := new(ReadAtRequest)
+  if err := dec(in); err != nil { return nil, err }
+  if interceptor == nil { return srv.(FileOpsServiceServer).ReadAt(ctx, in) }
+  info := &grpc.UnaryServerInfo{
+    Server: srv,
+    FullMethod: "/fileoperations.FileOpsService/ReadAt",
+  }
+  
+  handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+    return srv.(FileOpsServiceServer).ReadAt(ctx, req.(* ReadAtRequest))
+  }
+  return interceptor(ctx, in, info, handler)
 }
 
 
@@ -174,6 +202,10 @@ var _FileOpsService_serviceDesc = grpc.ServiceDesc{
     {
       MethodName: "Close",
       Handler: _FileOpsService_Close_Handler, 
+    },
+    {
+      MethodName: "ReadAt",
+      Handler: _FileOpsService_ReadAt_Handler, 
     },
     {
       MethodName: "Size",

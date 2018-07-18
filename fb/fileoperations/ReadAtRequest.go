@@ -58,20 +58,8 @@ func (rcv *ReadAtRequest) MutateSize(n int64) bool {
 	return rcv._tab.MutateInt64Slot(8, n)
 }
 
-func (rcv *ReadAtRequest) BlockSize() int64 {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
-	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
-	}
-	return 0
-}
-
-func (rcv *ReadAtRequest) MutateBlockSize(n int64) bool {
-	return rcv._tab.MutateInt64Slot(10, n)
-}
-
 func ReadAtRequestStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(3)
 }
 func ReadAtRequestAddOffset(builder *flatbuffers.Builder, Offset int64) {
 	builder.PrependInt64Slot(0, Offset, 0)
@@ -81,9 +69,6 @@ func ReadAtRequestAddPath(builder *flatbuffers.Builder, Path flatbuffers.UOffset
 }
 func ReadAtRequestAddSize(builder *flatbuffers.Builder, Size int64) {
 	builder.PrependInt64Slot(2, Size, 0)
-}
-func ReadAtRequestAddBlockSize(builder *flatbuffers.Builder, BlockSize int64) {
-	builder.PrependInt64Slot(3, BlockSize, 0)
 }
 func ReadAtRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

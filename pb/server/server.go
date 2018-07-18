@@ -1,12 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"net"
 	"log"
 	"context"
 	"os"
 	"errors"
+	"flag"
 
 	"google.golang.org/grpc"
 	"rpc/pb/fileops"
@@ -64,7 +64,7 @@ func (s *fileOpsServer) StreamReadAt(req *fileops.ReadAtRequest, stream fileops.
 		var data []byte
 		currentOffset := req.Offset
 		for doneData < req.ReadSize {
-			log.Printf ("Reading offset: %v", currentOffset)
+			// log.Printf ("Reading offset: %v", currentOffset)
 			if currentOffset + req.BlockSize > req.ReadSize {
 				data = make([]byte, req.ReadSize-currentOffset)
 			} else {
@@ -107,7 +107,13 @@ func newServer() *fileOpsServer {
 }
 
 func main() {
-	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", 10000))
+	var addr string
+
+	flag.StringVar(&addr, "addr", "", "Address on which server should be started")
+	flag.Parse()
+
+	lis, err := net.Listen("tcp", addr)
+
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}

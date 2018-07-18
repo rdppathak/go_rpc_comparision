@@ -3,10 +3,14 @@ package main
 import (
 	// "fmt"
 	// "sync"
+	"os"
+	"encoding/json"
+	"io/ioutil"
 	"time"
 	"io"
 	"context"
 	"log"
+	"flag"
 	"rpc/pb/fileops"
 	"google.golang.org/grpc"
 )
@@ -58,12 +62,19 @@ func (r *ReadAtImpl) Size (path string) (int64) {
 	}
 	return resp.Size
 }
-func (r *ReadAtImpl) ReadAt(path string, readSize int64, offset int64) (int64, error) {
+func (r *ReadAtImpl) StreamReadAt(path string, readSize int64, offset int64) (int64, error) {
+	var totalCalls int64 = 0
+	var averageCallDur time.Duration
+	var totalDuration time.Duration 
+	var minCallDuration time.Duration = time.Minute
+	var maxCallDuration time.Duration = time.Nanosecond
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	defer cancel()
 
-	startTime := time.Now()
+	fStartTime := time.Now()
+
 	readAtRequest := &fileops.ReadAtRequest{Path:path, Offset: offset, BlockSize: 512*1024, ReadSize: readSize}
 	streamData, err := r.client.StreamReadAt(ctx, readAtRequest)
 
@@ -73,7 +84,7 @@ func (r *ReadAtImpl) ReadAt(path string, readSize int64, offset int64) (int64, e
 
 	for {
 		stime := time.Now()
-		out, err := streamData.Recv()
+		_, err := streamData.Recv()
 		etime := time.Now()
 		if err == io.EOF {
 			break
@@ -82,20 +93,42 @@ func (r *ReadAtImpl) ReadAt(path string, readSize int64, offset int64) (int64, e
 		if err != nil {
 			log.Fatalf  ("Failed to read streamed data: %v", err.Error())
 		}
-		log.Printf ("Received Offset: %v, DataLen: %v, time take: %s", out.Offset, len(out.Data), (etime.Sub(stime)))
-	}
-	endTime := time.Now()
+		// log.Printf ("Received Offset: %v, DataLen: %v, time take: %s", out.Offset, len(out.Data), (etime.Sub(stime)))
+		callDuration := etime.Sub(stime)
+		// log.Printf ("Time to read data: %s", etime.Sub(stime))
+		totalDuration += callDuration
+		totalCalls++
 
-	log.Printf ("Total Time to transfer %d data, %s", readSize, (endTime.Sub(startTime)))
+		if callDuration <minCallDuration {
+			minCallDuration = callDuration
+		}
+
+		if callDuration >maxCallDuration {
+			maxCallDuration = callDuration
+		}
+	}
+	fEndTime := time.Now()
+	averageCallDur = time.Duration(totalDuration.Nanoseconds() /totalCalls)
+	totalDuration += fEndTime.Sub(fStartTime)
+
+	log.Printf ("Total Calls: %d, Average Call Duration: %s, Total Duration: %s", totalCalls, averageCallDur, totalDuration)
+	log.Printf ("Minimum Call Duration: %s, Maximum Call Duration: %s", minCallDuration, maxCallDuration)
 	return 0, nil
 }
 
-func (r *ReadAtImpl) MReadAt(path string, size int64) (error) {
+func (r *ReadAtImpl) ReadAt(path string, size int64) (error) {
 	log.Printf ("Starting disk read at: %d", size)
 	var currentOffset int64 = 0
 	var blockSize int64 = 512 * 1024
 	var readSize int64
-	startTime := time.Now()
+
+	var totalCalls int64 = 0
+	var averageCallDur time.Duration
+	var totalDuration time.Duration 
+	var minCallDuration time.Duration = time.Minute
+	var maxCallDuration time.Duration = time.Nanosecond
+	
+	fStartTime := time.Now()
 	for currentOffset < size {
 		readSize = blockSize
 		if currentOffset + blockSize > size {
@@ -111,12 +144,27 @@ func (r *ReadAtImpl) MReadAt(path string, size int64) (error) {
 			log.Fatalf ("Failed to call RPC readAt: %v", err)
 			return err
 		}
-		log.Printf ("Time to read data: %s", etime.Sub(stime))
+		callDuration := etime.Sub(stime)
+		// log.Printf ("Time to read data: %s", etime.Sub(stime))
+		totalDuration += callDuration
+		totalCalls++
+
+		if callDuration <minCallDuration {
+			minCallDuration = callDuration
+		}
+
+		if callDuration >maxCallDuration {
+			maxCallDuration = callDuration
+		}
 
 		currentOffset += blockSize
 	}
-	endTime := time.Now()
-	log.Printf ("Total Time to transfer %d data, %s", readSize, (endTime.Sub(startTime)))
+	fEndTime := time.Now()
+	averageCallDur = time.Duration(totalDuration.Nanoseconds() /totalCalls)
+	totalDuration += fEndTime.Sub(fStartTime)
+
+	log.Printf ("Total Calls: %d, Average Call Duration: %s, Total Duration: %s", totalCalls, averageCallDur, totalDuration)
+	log.Printf ("Minimum Call Duration: %s, Maximum Call Duration: %s", minCallDuration, maxCallDuration)
 	return nil
 }
 
@@ -132,12 +180,49 @@ func (r *ReadAtImpl) Close() (error) {
 	return nil
 }
 
+type Config struct {
+	Path string 	`json:"path"`
+	Addr string 	`json:"addr"`
+	Offset int64 	`json:"offset"`
+	BlockSize int64 `json:"blocksize"`
+	Size int64 		`json:"size"`
+}
+
 func main() {
-	var path string = "C:\\DynamicVhdx.vhdx"
-	readAtImpl := NewReadAtImpl("10.5.221.4:10000")
-	readAtImpl.Open(path)
+	var configFile string
+	var stream bool
+	var size int64 = 0
+	config := Config {}
+
+	flag.StringVar(&configFile, "fconfig", "", "Configuration file for client")
+	flag.BoolVar(&stream, "stream", false, "Transfer data using stream or non-stream mode")
+
+	flag.Parse()
+
+	jsonFile, err := os.Open(configFile)
+
+	if err != nil{
+		log.Fatalf ("Failed to open test configuration file: %v", err)
+	}
+	defer jsonFile.Close()
+
+	byteValue, _ := ioutil.ReadAll(jsonFile)
+	err = json.Unmarshal(byteValue, &config)
+
+	log.Printf ("Server Address: %s, File Path: %s", config.Addr, config.Path)
+
+	readAtImpl := NewReadAtImpl(config.Addr)
+	readAtImpl.Open(config.Path)
 	defer readAtImpl.Close()
-	size := readAtImpl.Size(path)
-	// readAtImpl.ReadAt(path, size, 0)
-	_ = readAtImpl.MReadAt(path, size)
+	size = config.Size
+	if config.Size == 0{
+		size = readAtImpl.Size(config.Path)
+	}
+	if stream {
+		log.Printf ("Using stream mode to transfer data")
+		readAtImpl.StreamReadAt(config.Path, size, 0)
+	} else {
+		log.Printf ("Using non-stream mode to transfer data")
+		_ = readAtImpl.ReadAt(config.Path, size)
+	}
 }

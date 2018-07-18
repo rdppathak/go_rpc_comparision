@@ -1,6 +1,6 @@
 {	
 	"path" : "/Users/rushikesh.pathak/VirtualBox VMs/centos/centos.vmdk",
-	"addr" : "0.0.0.0:50051",
+	"addr" : "localhost:50051",
 	"offset" : 0,
 	"blocksize" : 1048576
 }

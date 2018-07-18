@@ -4,7 +4,8 @@ namespace fileoperations;
 rpc_service FileOpsService {
   Open(OpenRequest):OpenResponse(streaming: "none");
   Close(CloseRequest):CloseResponse (streaming: "none");
-  StreamReadAt(ReadAtRequest):ReadAtResponse (streaming: "server");
+  StreamReadAt(StreamReadAtRequest):StreamReadAtResponse (streaming: "server");
+  ReadAt(ReadAtRequest):StreamReadAtResponse (streaming: "none");
   Size(SizeRequest):SizeResponse(streaming:"none");
 }
 
@@ -16,20 +17,28 @@ table OpenResponse {
 	Id:int64;
 }
 
-table CloseRequest {}
+table CloseRequest {
+	Path:string;
+}
 
 table CloseResponse {}
 
-table ReadAtRequest {
+table StreamReadAtRequest {
 	Offset:int64;
 	Path:string;
 	Size:int64;
 	BlockSize:int64;
 }
 
-table ReadAtResponse {
+table StreamReadAtResponse {
 	Offset:int64;
 	Data:string;
+}
+
+table ReadAtRequest {
+	Offset:int64;
+	Path:string;
+	Size:int64;
 }
 
 table SizeRequest {

@@ -31,22 +31,26 @@ func buildOpenRequest(path string) (*flatbuffers.Builder) {
 	return b
 }
 
-func buildReadAtRequest(path string, offset int64, blockSize int64, size int64) (*flatbuffers.Builder) {
+func buildStreamReadAtRequest(path string, offset int64, blockSize int64, size int64) (*flatbuffers.Builder) {
+	b := flatbuffers.NewBuilder(0)
+	strPath := b.CreateString(path)
+	fileoperations.StreamReadAtRequestStart(b)
+	fileoperations.StreamReadAtRequestAddPath(b, strPath)
+	fileoperations.StreamReadAtRequestAddOffset(b, offset)
+	fileoperations.StreamReadAtRequestAddBlockSize(b, blockSize)
+	fileoperations.StreamReadAtRequestAddSize(b, size)
+	b.Finish(fileoperations.StreamReadAtRequestEnd(b))
+	return b
+}
+
+func buildReadAtRequest(path string, offset int64, size int64) (*flatbuffers.Builder) {
 	b := flatbuffers.NewBuilder(0)
 	strPath := b.CreateString(path)
 	fileoperations.ReadAtRequestStart(b)
 	fileoperations.ReadAtRequestAddPath(b, strPath)
 	fileoperations.ReadAtRequestAddOffset(b, offset)
-	fileoperations.ReadAtRequestAddBlockSize(b, blockSize)
 	fileoperations.ReadAtRequestAddSize(b, size)
 	b.Finish(fileoperations.ReadAtRequestEnd(b))
-	return b
-}
-
-func buildCloseRequest() (*flatbuffers.Builder) {
-	b := flatbuffers.NewBuilder(0)
-	fileoperations.CloseRequestStart(b)
-	b.Finish(fileoperations.CloseRequestEnd(b))
 	return b
 }
 
@@ -55,6 +59,15 @@ func buildSizeRequest(path string) (*flatbuffers.Builder) {
 	strPath := b.CreateString(path)
 	fileoperations.SizeRequestStart(b)
 	fileoperations.SizeRequestAddPath(b, strPath)
+	b.Finish(fileoperations.CloseRequestEnd(b))
+	return b
+}
+
+func buildCloseRequest(path string) (*flatbuffers.Builder) {
+	b := flatbuffers.NewBuilder(0)
+	strPath := b.CreateString(path)
+	fileoperations.CloseRequestStart(b)
+	fileoperations.CloseRequestAddPath(b, strPath)
 	b.Finish(fileoperations.CloseRequestEnd(b))
 	return b
 }
@@ -80,23 +93,25 @@ func (f *FlatBufferClient) Open () {
 }
 
 func (f *FlatBufferClient) StreamReadAt(offset int64, blockSize int64, size int64) {
-	var totalCalls int = 0
-	var averageCallDur float64 = 0.0
-	var totalDuration int64 = 0
-	var minCallDuration int64 = 100
-	var maxCallDuration int64 = 0
-	fStartTime := time.Now().Unix()
-	b := buildReadAtRequest(f.path, offset, blockSize, size)
+	var totalCalls int64 = 0
+	var averageCallDur time.Duration
+	var totalDuration time.Duration 
+	var minCallDuration time.Duration = time.Minute
+	var maxCallDuration time.Duration = time.Nanosecond
+
+	fStartTime := time.Now()
+	b := buildStreamReadAtRequest(f.path, offset, blockSize, size)
 	out, err := f.client.StreamReadAt(context.Background(), b)
+
 	if err != nil {
 		log.Fatalf ("Failed to initiate ReadAt: %v", err)
 	}
 	
 	for {
-		cStartTime := time.Now().Unix()
-		resp, err := out.Recv()
-		cEndTime := time.Now().Unix()
-		callDuration := (cEndTime-cStartTime)
+		cStartTime := time.Now()
+		_, err := out.Recv()
+		cEndTime := time.Now()
+		callDuration := cEndTime.Sub(cStartTime)
 		totalDuration += callDuration
 		totalCalls++
 		if callDuration <minCallDuration {
@@ -114,15 +129,65 @@ func (f *FlatBufferClient) StreamReadAt(offset int64, blockSize int64, size int6
 		if err != nil {
 			log.Fatalf("Failed during data read")
 		}
-		log.Printf ("Received Offset: %v", resp.Offset())
+		// log.Printf ("Received Offset: %v", resp.Offset())
 	}
-	fEndTime := time.Now().Unix()
+	fEndTime := time.Now()
 
-	averageCallDur = float64(totalDuration) /float64(totalCalls)
-	totalDuration += (fEndTime-fStartTime)
+	averageCallDur = time.Duration(totalDuration.Nanoseconds() /totalCalls)
+	totalDuration += fEndTime.Sub(fStartTime)
 
-	log.Printf ("Total Calls: %d, Average Call Duration: %f, Total Duration: %d", totalCalls, averageCallDur, totalDuration)
-	log.Printf ("Minimum Call Duration: %d, Maximum Call Duration: %d", minCallDuration, maxCallDuration)
+	log.Printf ("Total Calls: %d, Average Call Duration: %s, Total Duration: %s", totalCalls, averageCallDur, totalDuration)
+	log.Printf ("Minimum Call Duration: %s, Maximum Call Duration: %s", minCallDuration, maxCallDuration)
+}
+
+func(f *FlatBufferClient) ReadAt(offset int64, blockSize int64, size int64) {
+	log.Printf ("Calling ReadAt....")
+	var currentOffset int64 = offset
+	var doneSize int64 = 0
+	var totalCalls int64 = 0
+	var averageCallDur time.Duration
+	var totalDuration time.Duration 
+	var minCallDuration time.Duration = time.Minute
+	var maxCallDuration time.Duration = time.Nanosecond
+
+	fStartTime := time.Now()
+
+	for doneSize < size {
+		if doneSize + blockSize > size {
+			blockSize = size - doneSize
+		}
+
+		cStartTime := time.Now()
+		b := buildReadAtRequest(f.path, currentOffset, blockSize)
+		_, err := f.client.ReadAt(context.Background(), b)
+		cEndTime := time.Now()
+		callDuration := cEndTime.Sub(cStartTime)
+		// log.Printf ("Call duration :%s", callDuration)
+		totalDuration += callDuration
+		totalCalls++
+		if callDuration <minCallDuration {
+			minCallDuration = callDuration
+		}
+
+		if callDuration >maxCallDuration {
+			maxCallDuration = callDuration
+		}
+
+		if err != nil {
+			log.Fatalf("Failed to ReadAt: %s", err)
+		}
+
+		currentOffset += blockSize
+		doneSize += blockSize
+
+	}
+	fEndTime := time.Now()
+
+	averageCallDur = time.Duration(totalDuration.Nanoseconds() /totalCalls)
+	totalDuration += fEndTime.Sub(fStartTime)
+
+	log.Printf ("Total Calls: %d, Average Call Duration: %s, Total Duration: %s", totalCalls, averageCallDur, totalDuration)
+	log.Printf ("Minimum Call Duration: %s, Maximum Call Duration: %s", minCallDuration, maxCallDuration)
 }
 
 func (f *FlatBufferClient) Size() (int64) {
@@ -135,7 +200,7 @@ func (f *FlatBufferClient) Size() (int64) {
 }
 
 func (f *FlatBufferClient) Close () {
-	_, err := f.client.Close(context.Background(), buildCloseRequest())
+	_, err := f.client.Close(context.Background(), buildCloseRequest(f.path))
 	if err != nil {
 		log.Fatalf("Retrieve client failed: %v", err)
 	}
@@ -146,13 +211,17 @@ type Config struct {
 	Addr string 	`json:"addr"`
 	Offset int64 	`json:"offset"`
 	BlockSize int64 `json:"blocksize"`
+	Size int64 		`json:"size"`
 }
 
 func main() {
 	var configFile string
+	var stream bool
+	var size int64 = 0
 	config := Config {}
 
 	flag.StringVar(&configFile, "fconfig", "", "Configuration file for client")
+	flag.BoolVar(&stream, "stream", false, "Transfer data using stream or non-stream mode")
 
 	flag.Parse()
 
@@ -171,6 +240,15 @@ func main() {
 	fbClient := NewFlatBufferClient(config.Addr, config.Path)
 	fbClient.Open()
 	defer fbClient.Close()
-	size := fbClient.Size()
-	fbClient.StreamReadAt(config.Offset, config.BlockSize, size)
+	if config.Size == 0 {
+		size = fbClient.Size()
+	}
+
+	if stream {
+		log.Printf ("Using stream mode to transfer data")
+		fbClient.StreamReadAt(config.Offset, config.BlockSize, size)
+	} else{
+		log.Printf ("Using non-stream mode to transfer data")
+		fbClient.ReadAt(config.Offset, config.BlockSize, size)
+		}
 }

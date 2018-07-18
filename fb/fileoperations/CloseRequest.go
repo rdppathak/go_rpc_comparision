@@ -26,8 +26,19 @@ func (rcv *CloseRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
+func (rcv *CloseRequest) Path() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
 func CloseRequestStart(builder *flatbuffers.Builder) {
-	builder.StartObject(0)
+	builder.StartObject(1)
+}
+func CloseRequestAddPath(builder *flatbuffers.Builder, Path flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(Path), 0)
 }
 func CloseRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
